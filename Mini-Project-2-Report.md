@@ -19,62 +19,84 @@ header-includes:
 
 # Introduction
 
-> *Course folklore: mIoU holds a town hall across twenty-one parties; pixel accuracy is a landslide for the background ticket. Both metrics tell stories; they rarely tell the same joke.*
-
-Semantic segmentation assigns each pixel to one of a fixed set of semantic classes. This work reports experiments on the Pascal VOC 2007 segmentation benchmark, comprising twenty object categories and a background class (twenty-one labels in total). Following the course protocol, the official validation split is used as the held-out test set. We compare a custom fully convolutional U-Net to DeepLabV3 with a ResNet-50 backbone implemented in torchvision, and summarize controlled ablations on the U-Net training recipe together with an architecture-wise comparison to the strongest global model in our logs. Supervised metrics and quantitative figures are complemented by qualitative visualizations prepared in the companion notebook. Source code and configuration are summarized in the Software and reproducibility subsection at the end of Methods.
+Semantic segmentation assigns each pixel to one of a fixed set of semantic classes. This work reports experiments on the Pascal VOC 2007 segmentation benchmark (twenty foreground classes plus background). Following the course protocol, the official validation split is used as the held-out test set. We compare a custom U-Net to DeepLabV3-ResNet50 from torchvision and summarize ablations on the U-Net recipe plus an architecture-level comparison. All quantitative tables in Results were generated from the same exported evaluation CSVs as the companion notebook. The Methods section below is organized as a **single pipeline description**, a **transparent hyperparameter registry**, and an explicit **fairness critique** so readers can judge how strongly each headline comparison supports a causal claim.
 
 # Methods
 
-## Dataset and splits
+## End-to-end pipeline (concise flow)
 
-Training and evaluation use `torchvision.datasets.VOCSegmentation` with data rooted at `VOCdevkit/VOC2007/`, including JPEG images, indexed train and validation lists under `ImageSets/Segmentation`, and PNG instance-agnostic semantic masks. The reported runs contain 209 training pairs and 213 validation pairs. Each training example consists of an RGB image and a single-channel mask with integer labels in $\{0,\ldots,20\}$, where zero denotes background.
+**Data in.** Pascal VOC 2007 semantic masks are loaded with `torchvision.datasets.VOCSegmentation` under `VOCdevkit/VOC2007/` (209 training and 213 validation pairs in our logs). Each sample provides RGB JPEGs and a single-channel mask with labels in $\{0,\ldots,20\}$ (zero is background).
 
-## Preprocessing
+**Preprocess and augment.** Training pairs optionally pass through stochastic augmentation (geometry on image and mask jointly; photometric jitter on RGB only). Image and mask are then resized to $256 \times 256$: **bilinear** for images, **nearest-neighbor** for masks. RGB tensors receive ImageNet normalization; masks become `int64` then `long` for dense supervision. Affine padding uses ignore index **255** where supported.
 
-Geometric processing applies to image-mask pairs in lockstep. After optional augmentation (training only), images and masks are resized to $256 \times 256$ pixels. Images are resampled with bilinear interpolation; masks use nearest-neighbor interpolation so that class indices remain categorical. RGB images are converted to floating-point tensors and normalized with ImageNet statistics (mean $[0.485, 0.456, 0.406]$, standard deviation $[0.229, 0.224, 0.225]$). Masks are represented as 64-bit integers and cast to long tensors for dense classification losses.
+**Model and loss.** The network outputs twenty-one logits per spatial location. The training objective is selected per experiment (joint cross-entropy with soft Dice, CE-only with label smoothing, or Dice-only); CE-type runs can use **class reweighting** from training-mask frequencies.
 
-## Data augmentation
+**Optimize and select.** We optimize with weight decay $10^{-4}$, mixed precision when available, gradient clipping (norm one), and **cosine decay** of the learning rate over the scheduled epoch horizon implemented in the repository. The checkpoint **maximizing validation mIoU** is retained; training may **stop early** if validation mIoU fails to improve for a patience window defined in the notebook.
 
-When enabled on the training set only, the pipeline applies a horizontal flip to both modalities with probability 0.5. With probability 0.6, a random affine transform is applied (rotation within approximately $\pm 10^\circ$, translation up to about five percent of the spatial extent, scale in $[0.9,1.1]$, shear within approximately $\pm 5^\circ$). Images use bilinear warping; masks use nearest-neighbor warping, with out-of-range locations assigned the ignore index 255 so that void regions can be excluded from the loss where supported. Photometric jitter (brightness and contrast, each with probability 0.35; saturation with probability 0.2) is applied to images alone so that label semantics are unchanged.
-
-## Class imbalance and optimization
-
-For cross-entropy training, class frequencies estimated from training masks (excluding ignore pixels) can be used to reweight the loss and mitigate gradient domination by background. Dice-based objectives emphasize set overlap and are less directly tied to per-pixel frequency weighting. Optimization uses batch size four for fifteen epochs, learning rate $5 \times 10^{-4}$, weight decay $1 \times 10^{-4}$, mixed-precision arithmetic when available, and gradient clipping.
+**Evaluate.** All reported metrics use the **same** validation dataloader **without** augmentation.
 
 ## Architectures
 
-The U-Net variant is an encoder-decoder with skip connections producing twenty-one output channels at full resolution. Narrow and wide configurations differ in channel width. DeepLabV3-ResNet50 combines a ResNet-50 encoder with an atrous spatial pyramid pooling module and a dense prediction head. In the reported experiments, DeepLabV3-ResNet50 attains the highest mean intersection-over-union (mIoU). A full factorial ablation grid for DeepLab (e.g., augmentation on and off) was not completed under the same compute budget; DeepLab is therefore treated primarily as a fixed high-capacity reference. The notebook additionally documents an optional Segment Anything Model 2 pathway based on prompted instance segmentation; quantitative comparison to dense twenty-one-way prediction is out of scope when checkpoints or dependencies are unavailable.
+**U-Net:** Encoder-decoder with skip connections; narrow (`32,64,128,256`) versus wide (`64,128,256,512`) channel schedules.
 
-## Ablation protocol
+**DeepLabV3-ResNet50:** ResNet-50 + ASPP + dense head. Runs in our registry enable **ImageNet-pretrained backbone weights** when the environment can download or resolve them, which is a deliberate advantage relative to the **from-scratch** U-Net encoder.
 
-Pairwise comparisons isolate single factors where possible: (i) augmentation off versus on for the small U-Net; (ii) cross-entropy-only versus Dice-only training for the small U-Net without augmentation; (iii) narrow versus wide U-Net with augmentation enabled; (iv) small U-Net with augmentation versus DeepLabV3-ResNet50 as an architecture comparison relative to the best mIoU model in the study.
+**SAM/SAM2:** Optional prompted baseline in the notebook only; not part of the quantitative tables.
+
+## Hyperparameter registry (reproducibility)
+
+The table matches the **`EXPERIMENTS` dictionary** in the companion notebook at export time. **Nominal epoch budget** is 30 for each row; **actual** parameter updates can be fewer if early stopping fires. Initial learning rates are **pre-decay** values; optimization uses AdamW with cosine annealing over the remaining budget per implementation. Batch size is four unless locally overridden.
+
+**Configuration summary.** Abbreviations: CE+Dice = sum of cross-entropy and soft Dice (implementation detail in code); ``Class reweight'' applies inverse-frequency style weights for CE components when enabled.
+
+| Experiment | Epoch budget | Initial LR | Training loss | Train augment | Class reweight (CE path) | Label smoothing (CE) | ImageNet-pretrained backbone |
+|:--|--:|--:|:--|:--|:--|:--|:--|
+| unet_small_no_aug | 30 | $5\times10^{-4}$ | CE + Dice | no | yes | 0 | no |
+| unet_small_with_aug | 30 | $5\times10^{-4}$ | CE + Dice | yes | yes | 0 | no |
+| unet_small_ce_only | 30 | $5\times10^{-4}$ | CE only | yes | yes | 0.05 | no |
+| unet_small_dice_only | 30 | $5\times10^{-4}$ | Dice only | yes | no | 0 | no |
+| unet_wider_with_aug | 30 | $3\times10^{-4}$ | CE + Dice | yes | yes | 0 | no |
+| deeplabv3_resnet50 | 30 | $2\times10^{-4}$ | CE + Dice | yes | yes | 0 | yes |
+
+**Reproducibility artifacts.** Exact seeds, optimizer $\beta$ values, dataloader worker counts, and early-stopping counters are defined in `notebooks/train.py` and the training notebook cells. **Checkpoints and raw VOC archives are not stored in git** (see `.gitignore`); rerunning the notebook or `train.py` after downloading VOC reproduces weights up to hardware nondeterminism.
+
+## Comparator fairness (critical evaluation)
+
+**What is legitimately aligned:** identical split policy, evaluation resolution, metric implementations, and (by default) batch size and global weight decay from `SegConfig`.
+
+**What is not a single-factor study:** (1) **DeepLab versus augmented narrow U-Net** differs in **architecture, parameter count, receptive field, and ImageNet backbone initialization**, not only ``which head''; (2) **initial learning rates are not uniform** (DeepLab $2\times10^{-4}$, most small U-Nets $5\times10^{-4}$, wider U-Net $3\times10^{-4}$), so the **width** row confounds **capacity with optimizer tuning**; (3) **loss recipes differ** (CE+Dice versus CE-only with smoothing versus Dice-only with class weights disabled); (4) **early stopping** means two runs with the same nominal budget can see different numbers of updates. Pairwise rows in Table 2 remain informative where **architecture and LR are shared** (augmentation toggle on the small U-Net; CE-only versus Dice-only on the small U-Net), but those comparisons still inherit loss-form differences other than the intended CE versus Dice contrast.
+
+## Ablation protocol (intent versus confounds)
+
+**Augmentation:** `unet_small_no_aug` versus `unet_small_with_aug` (same loss CE+Dice, same nominal LR schedule family).
+
+**Loss (CE versus Dice):** `unet_small_ce_only` versus `unet_small_dice_only` --- **both use training augmentation** in the registry; the intended factor is the **objective**, acknowledging auxiliary differences (label smoothing and class reweighting on CE-only, disabled reweighting on Dice-only).
+
+**Width:** `unet_small_with_aug` versus `unet_wider_with_aug` --- same augmentation and loss form, **but different initial LR** (see table); interpret as **``wider + retuned LR''** rather than width alone.
+
+**Architecture:** `unet_small_with_aug` versus `deeplabv3_resnet50` --- interpret as **strong engineering baseline comparison** under the caveats above.
 
 ## Evaluation metrics
 
-We report mIoU and mean Dice coefficient averaged over classes with valid support, overall pixel accuracy, per-class IoU where exported, and pixel accuracy restricted to the person class. For the person category we additionally report the 95th percentile Hausdorff distance (HD95) between predicted and reference binary person masks, with lower values indicating closer boundary agreement. Qualitative assessment uses mosaic layouts (image, ground truth, prediction) and ranked examples by per-image person IoU.
+Mean intersection-over-union (mIoU) and mean Dice (class support handled as in code); pixel accuracy; per-class IoU; person-class IoU and person pixel accuracy; **HD95** (95th percentile Hausdorff distance) on binary person masks, lower is better. Qualitative mosaics and best/worst person cases are prepared in the notebook.
 
-## Software and reproducibility
+## Software
 
-Experiments are implemented in PyTorch. Source code, the primary notebook, training script, metric exports, and figure-generation utilities are maintained at https://github.com/Qiayi0815/shbt_miniproject2 . Representative paths in that repository include `notebooks/mini_project_2_pascal_voc_segmentation (1) (4).ipynb`, `notebooks/train.py`, and `artifacts/report_exports/`. Version-controlled releases omit multi-hundred-megabyte checkpoints and raw VOC archives; regenerate weights locally after placing the dataset under the configured root.
-
-```{=latex}
-\paragraph{Author note.}
-\textit{If a tensor ever asks whether it is ``learning'' or ``memorizing the sky,'' answer diplomatically and check your validation augmentations.}
-```
+https://github.com/Qiayi0815/shbt_miniproject2 --- primary paths: `notebooks/mini_project_2_pascal_voc_segmentation (1) (4).ipynb`, `notebooks/train.py`, `artifacts/report_exports/`.
 
 # Results
 
-All metrics below are computed on the Pascal VOC 2007 validation masks used as test data. Figures and tables are referenced in the order they appear.
+All metrics below are computed on the Pascal VOC 2007 validation masks used as test data. Figures and tables appear in reading order; each caption states the **main takeaway** without requiring the body text.
 
-![Mean intersection-over-union and mean Dice coefficient by experiment (bars sorted by mIoU in the plotting script).](./report_figures/fig01_miou_dice_by_experiment.png){width=95%}
+![**DeepLab leads global overlap among all runs.** Bar chart of mean IoU (blue) and mean Dice (orange) for every experiment, sorted by decreasing mIoU in the plotting script. DeepLabV3-ResNet50 is tallest on both axes; U-Net variants cluster at lower mIoU with heterogeneous Dice. Use this figure as a one-glance ranking of global segmentation quality under the registry in Methods.](./report_figures/fig01_miou_dice_by_experiment.png){width=95%}
 
-Figure 1 summarizes global overlap: DeepLabV3-ResNet50 attains the tallest bars on both mIoU and mean Dice (0.0655 and 0.0978), while U-Net runs occupy a lower band on mIoU yet remain competitive on mean Dice only for select configurations. The figure therefore previews the central architectural gap before tabulating complementary quantities.
+Figure 1 supports the headline that DeepLab attains the highest mIoU and mean Dice in Table 1 before reading numeric cells.
 
-![Pixel accuracy versus mIoU for each experiment (abbreviated labels: DL-R50 = DeepLabV3-ResNet50; UN-* = U-Net variants).](./report_figures/fig06_pixelacc_vs_miou.png){width=62%}
+![**High pixel accuracy does not imply high mIoU.** Scatter of overall pixel accuracy (vertical) versus mIoU (horizontal) for each experiment; labels abbreviate model IDs (DL-R50 = DeepLabV3-ResNet50; UN-* = U-Net variants). Several U-Nets lie **above** DeepLab on pixel accuracy while remaining **left** on mIoU, illustrating majority-class agreement without balanced per-class overlap.](./report_figures/fig06_pixelacc_vs_miou.png){width=62%}
 
-Figure 2 makes the decoupling explicit: several U-Nets sit to the **right** of DeepLab on pixel accuracy but to the **left** on mIoU, which is the hallmark of majority-class agreement without balanced per-class overlap. DeepLab occupies the upper-left quadrant relative to those points, trading a few percentage points of pixel accuracy for higher mIoU.
+Figure 2 visualizes the decoupling that Table 1 quantifies.
 
-**Table 1.** Quantitative segmentation metrics. Pixel accuracy, mIoU, mean Dice, person IoU, and person pixel accuracy are fractions in $[0,1]$ except HD95 (person), for which lower values indicate better boundary agreement. Validation loss is included for completeness; values are not directly comparable between Dice-only and cross-entropy runs.
+**Table 1.** Validation metrics on the held-out split. Pixel-type accuracies are in $[0,1]$; HD95 (person) is a distance (lower better). Val loss scales differ between Dice-only and CE-type objectives.
 
 | Experiment | Pixel acc. | mIoU | Mean Dice | HD95 (person) | Person IoU | Person acc. | Val loss |
 |:--|--:|--:|--:|--:|--:|--:|--:|
@@ -85,13 +107,13 @@ Figure 2 makes the decoupling explicit: several U-Nets sit to the **right** of D
 | unet_wider_with_aug | **0.714** | 0.0423 | 0.0538 | 99.32 | 0.137 | 0.285 | 3.40 |
 | unet_small_with_aug | 0.714 | 0.0418 | 0.0530 | 88.74 | 0.135 | 0.270 | 3.44 |
 
-Table 1 states the same rankings numerically. DeepLab leads mIoU and mean Dice. The Dice-only U-Net attains the largest person IoU (0.210) and person pixel accuracy (0.479), whereas the cross-entropy-only U-Net attains the lowest HD95 among U-Net variants (88.38). DeepLab records a low person IoU (0.024) in this fifteen-epoch snapshot despite leading global overlap, which motivates joint reporting of summary and class-specific evidence. Validation loss is lowest for Dice-only training (0.82) but scales differently under cross-entropy (e.g., 2.57 for DeepLab and CE-only U-Net).
+Table 1 states the same rankings numerically. DeepLab leads mIoU and mean Dice. The Dice-only U-Net attains the largest person IoU (0.210) and person pixel accuracy (0.479), whereas the cross-entropy-only U-Net attains the lowest HD95 among U-Net variants (88.38). DeepLab records a low person IoU (0.024) in this training snapshot despite leading global overlap, which motivates joint reporting of summary and class-specific evidence. Validation loss is lowest for Dice-only training (0.82) but is not comparable across loss families.
 
-![Person-class IoU and person pixel accuracy (bars) with HD95 for the person mask (markers connected by line segments; lower HD95 is preferable).](./report_figures/fig02_person_metrics.png){width=95%}
+![**Dice training prioritizes the person class more than CE-only here.** Bars: person IoU (dark green) and person pixel accuracy (olive). Purple line with markers: HD95 on the person mask (lower is better). Dice-only U-Net peaks person IoU and person accuracy; CE-only U-Net achieves the best U-Net HD95; DeepLab is strong on global metrics (Table 1) but not on these person-centric scores in this log.](./report_figures/fig02_person_metrics.png){width=95%}
 
-Figure 3 isolates the **person** axis of Table 1: Dice training elevates both person IoU and person pixel accuracy, CE-only minimizes HD95 among U-Nets, and DeepLab's HD95 and person IoU remain modest here relative to its global mIoU lead.
+Figure 3 isolates the person axis of Table 1.
 
-**Table 2.** Paired ablation effects (comparison minus baseline). HD95 is on the person mask (lower $\Delta$ is better).
+**Table 2.** Paired differences (comparison minus baseline). HD95: lower $\Delta$ is better.
 
 | Ablation | Baseline | Comparison | $\Delta$ mIoU | $\Delta$ person IoU | $\Delta$ HD95 (person) |
 |:--|:--|:--|--:|--:|--:|
@@ -100,41 +122,41 @@ Figure 3 isolates the **person** axis of Table 1: Dice training elevates both pe
 | Model width | unet_small_with_aug | unet_wider_with_aug | +0.0006 | +0.0013 | +10.58 |
 | Architecture | unet_small_with_aug | deeplabv3_resnet50 | **+0.0237** | -0.1111 | +9.17 |
 
-Augmentation reduces mIoU slightly ($-0.0022$) while improving person IoU ($+0.0121$) and HD95 ($-7.15$). Replacing cross-entropy with Dice leaves mIoU unchanged at printed precision but raises person IoU by $0.0783$ with a small HD95 penalty ($+1.47$). Width scaling is nearly neutral on mIoU and person IoU yet raises HD95 by $10.58$. The architecture row carries the largest mIoU gain ($+0.0237$) together with a person IoU drop ($-0.1111$) and higher HD95 ($+9.17$), summarizing the trade-off between balanced multi-class segmentation and person overlap under a fixed schedule.
+Augmentation reduces mIoU slightly ($-0.0022$) while improving person IoU ($+0.0121$) and HD95 ($-7.15$). Replacing CE-only with Dice-only leaves printed mIoU unchanged but raises person IoU by $0.0783$ with a small HD95 penalty ($+1.47$). Width scaling is nearly neutral on mIoU and person IoU yet raises HD95 by $10.58$, consistent with the Methods note that **LR differs** between narrow and wide runs. The architecture row shows the largest mIoU gain ($+0.0237$) together with a person IoU drop ($-0.1111$) and higher HD95 ($+9.17$); interpret together with the **pretraining and LR** caveats above.
 
-![Changes in mIoU (blue) and person IoU (orange) for each paired ablation in Table 2 (horizontal axis: $\Delta$ metric).](./report_figures/fig03_ablation_deltas.png){width=95%}
+![**Ablation directions for global versus person overlap.** Horizontal bars: $\Delta$mIoU (blue) and $\Delta$person IoU (orange) for each paired study in Table 2; zero is vertical. Takeaway: augmentation and architecture rows move mIoU and person IoU in opposite directions; the loss swap moves person IoU strongly with near-zero $\Delta$mIoU at three decimals.](./report_figures/fig03_ablation_deltas.png){width=95%}
 
-Figure 4 re-expresses Table 2 for the two overlap summaries: augmentation and architecture move person IoU and mIoU in different directions, whereas the loss swap shifts person IoU strongly with a near-zero mIoU delta at three decimal places.
+Figure 4 mirrors Table 2 for the two overlap summaries.
 
-![Per-class IoU for DeepLabV3-ResNet50 excluding background, sorted ascending.](./report_figures/fig04_deeplab_per_class_iou.png){width=72%}
+![**DeepLab activates many VOC classes, not only background.** Horizontal bar chart of per-class IoU for DeepLabV3-ResNet50, **excluding** background, sorted ascending. Non-zero bars indicate where the model assigns measurable mass beyond chance; read as evidence of **breadth** of multi-class predictions.](./report_figures/fig04_deeplab_per_class_iou.png){width=72%}
 
-Figure 5 lists every non-background class for which DeepLab achieves non-negligible IoU in our export, emphasizing breadth rather than a single foreground mode.
+Figure 5 lists every non-background class with non-negligible IoU for DeepLab in our export.
 
-![Per-class IoU heatmap for DeepLabV3-ResNet50, U-Net with augmentation, and U-Net with Dice-only training (all twenty-one VOC classes, including background).](./report_figures/fig05_perclass_heatmap_models.png){width=62%}
+![**U-Net columns are sparse; DeepLab is dense across classes.** Heatmap of per-class IoU (rows = all twenty-one VOC labels including background; columns = DeepLab, U-Net+augmentation, U-Net Dice-only). Brighter cells mean higher IoU. Takeaway: DeepLab shows energy across many semantic rows, whereas U-Net columns concentrate brightness near **person** and a few incidental classes, matching a background-heavy failure mode for rare categories.](./report_figures/fig05_perclass_heatmap_models.png){width=62%}
 
-Figure 6 contrasts **dense** versus **sparse** per-class structure: DeepLab shows energy across many rows, whereas the two U-Net columns are darker outside person and a few incidental classes, matching the narrative of background-heavy U-Net predictions with selective foreground peaks.
+Figure 6 contrasts dense versus sparse per-class structure under identical color scaling.
 
 Dense prediction **mosaics** (image, ground truth, prediction) and **best- versus worst-case** person examples ranked by per-image person IoU remain in the companion notebook; export them for the submission PDF if required as qualitative figures.
 
 # Discussion
 
-Pixel accuracy is dominated by correct background predictions; consequently, it can increase when the model becomes more confident on easy majority regions even as rare-class IoU stagnates. Mean IoU penalizes such imbalance because it averages overlap across categories. Figure 2 visualizes this decoupling directly; Table 1 supplies the underlying numbers. DeepLabV3-ResNet50 widens the effective receptive field and fuses multi-scale context prior to upsampling, which favors recovery of diverse object categories and aligns with the spread of non-zero per-class IoU in Figures 5 and 6. Under the same resolution and epoch budget, compact U-Nets more often concentrate evidence in background and a limited set of foreground modes, as shown by the sparse columns in Figure 6 and by the per-class exports summarized there.
+Pixel accuracy is dominated by correct background predictions; consequently, it can increase when the model becomes more confident on easy majority regions even as rare-class IoU stagnates. Mean IoU penalizes such imbalance because it averages overlap across categories. Figure 2 visualizes this decoupling directly; Table 1 supplies the underlying numbers. DeepLabV3-ResNet50 widens the effective receptive field and fuses multi-scale context prior to upsampling, which favors recovery of diverse object categories and aligns with the spread of non-zero per-class IoU in Figures 5 and 6. Under the same evaluation resolution, compact U-Nets more often concentrate evidence in background and a limited set of foreground modes, as shown by the sparse columns in Figure 6. **Cross-model rankings should be read together with the fairness paragraph in Methods:** the architecture row is informative but not a pure isolation of ``DeepLab versus U-Net'' because pretraining and learning-rate schedules differ.
 
-Absolute mIoU values remain modest at $256 \times 256$ resolution with fifteen training epochs. Downsampling removes fine structures that remain semantically salient at full scale, and class imbalance continues to bias gradients toward safe dominant-class predictions. Within this constrained regime, relative ordering between architectures and training objectives remains informative.
+Absolute mIoU values remain modest at $256 \times 256$ with the documented training budget. Downsampling removes fine structures that remain semantically salient at full scale, and class imbalance continues to bias gradients toward safe dominant-class predictions. Within this constrained regime, relative ordering between objectives and augmentations remains informative where shared factors dominate.
 
 The Dice-trained U-Net improves person IoU relative to cross-entropy at essentially fixed mIoU, consistent with overlap-based losses emphasizing foreground agreement. Cross-entropy with class reweighting optimizes a per-pixel softmax and, in these logs, attains the strongest person HD95 among U-Nets, indicating complementary behavior between overlap-based and likelihood-based training signals. Hausdorff metrics are sensitive to thin structures; small boundary displacements can alter HD95 substantially.
 
-Augmentation slightly reduces mIoU in the paired comparison while improving person-centric measures. Geometric perturbations reduce reliance on fixed poses and crops yet can increase effective difficulty for infrequent classes that already receive limited supervision. Given finite epochs, mean summaries can move in opposite directions to class-specific indices without inconsistency.
+Augmentation slightly reduces mIoU in the paired comparison while improving person-centric measures. Geometric perturbations reduce reliance on fixed poses and crops yet can increase effective difficulty for infrequent classes that already receive limited supervision. Given finite epochs and early stopping, mean summaries can move in opposite directions to class-specific indices without inconsistency.
 
-Increasing channel width without revisiting learning rate or regularization leaves mIoU and person IoU nearly unchanged while degrading HD95, which is compatible with optimization difficulty or texture overfitting when capacity grows. Architectural substitution from the augmented small U-Net to DeepLabV3-ResNet50 produces the dominant mIoU improvement, supporting the primacy of inductive bias and receptive field over marginal width changes. The concurrent drop in person IoU for DeepLab relative to the Dice-trained U-Net reflects competition for representational capacity across twenty foreground classes within the same training horizon; additional training or auxiliary person supervision would be reasonable avenues to reconcile global and class-specific goals.
+Increasing channel width without matching learning-rate protocol leaves mIoU and person IoU nearly unchanged while degrading HD95, which is compatible with optimization difficulty or texture overfitting when capacity grows **under a lower initial LR** than the narrow baseline. Architectural substitution from the augmented small U-Net to DeepLabV3-ResNet50 produces the dominant mIoU improvement, supporting the primacy of inductive bias and receptive field **when also granting ImageNet initialization**; the concurrent drop in person IoU for DeepLab relative to the Dice-trained U-Net reflects competition for representational capacity across twenty foreground classes within the same nominal budget.
 
 Nearest-neighbor mask resizing preserves label integrity but can alias thin objects at coarse resolution, contributing to missing rare classes in mIoU rather than indicating label corruption. ImageNet normalization stabilizes optimization for architectures designed around pretrained statistics.
 
-This study does not claim state-of-the-art VOC performance; it documents controlled comparisons under a single preprocessing and schedule choice. Optional SAM-based pipelines are not evaluated here as dense twenty-one-way semantic competitors. Natural extensions include higher-resolution training, longer schedules with decay, test-time augmentation, and DeepLab-specific loss and augmentation ablations.
+This study does not claim state-of-the-art VOC performance; it documents controlled comparisons under a transparent registry with explicit limits. Optional SAM-based pipelines are not evaluated here as dense twenty-one-way semantic competitors. Natural extensions include matched-LR sweeps for DeepLab and U-Net, width-only sweeps at fixed LR, higher-resolution training, and longer budgets without early stopping.
 
 # Conclusion
 
-We presented a reproducible comparison of custom U-Net variants and DeepLabV3-ResNet50 on Pascal VOC 2007 with paired resizing, nearest-neighbor label warping, ImageNet normalization, and optional geometric and photometric augmentation. DeepLabV3-ResNet50 achieved the strongest mIoU and mean Dice, with broad non-background activation in per-class IoU. Dice-only U-Net training yielded the strongest person IoU and person pixel accuracy, whereas augmentation improved person HD95 despite a small negative change in mIoU in the logged pair. Architecture choice outweighed modest width scaling for global metrics, while the loss objective materially shaped person-centric outcomes. Qualitative material in the companion notebook completes the empirical record. No rubber ducks were harmed during debugging; several convolution kernels may still be questioning their life choices.
+We presented a reproducible comparison of U-Net variants and DeepLabV3-ResNet50 on Pascal VOC 2007 with paired preprocessing, a **documented hyperparameter registry**, and an explicit discussion of **which comparisons are and are not fair**. DeepLabV3-ResNet50 achieved the strongest mIoU and mean Dice, with broad non-background activation in per-class IoU. Dice-only U-Net training yielded the strongest person IoU and person pixel accuracy, whereas augmentation improved person HD95 despite a small negative change in mIoU in the logged pair. Architecture and objective choices materially shaped outcomes; **width results must be interpreted alongside learning-rate differences.** Qualitative material in the companion notebook completes the empirical record.
 
 ```{=latex}
 \newpage
