@@ -17,6 +17,7 @@ VOCtrainval*/
 
 # local tooling / OS
 .omx/
+.vscode/
 .DS_Store
 *.log
 .claude/
