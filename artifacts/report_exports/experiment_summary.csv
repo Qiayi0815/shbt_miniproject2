@@ -1,0 +1,7 @@
+experiment,pixel_accuracy,mIoU,mean_dice,hd95_person,human_iou,human_accuracy,val_loss
+deeplabv3_resnet50,0.6526,0.0655,0.0978,97.9131,0.0241,0.0272,2.5729
+unet_small_dice_only,0.6711,0.045,0.0587,89.8553,0.2098,0.4787,0.8211
+unet_small_ce_only,0.7069,0.045,0.0585,88.3839,0.1315,0.3231,2.574
+unet_small_no_aug,0.656,0.044,0.0591,95.8874,0.1232,0.3741,3.4112
+unet_wider_with_aug,0.7141,0.0423,0.0538,99.3223,0.1366,0.2849,3.3952
+unet_small_with_aug,0.7138,0.0418,0.053,88.7402,0.1353,0.2696,3.4392

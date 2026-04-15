@@ -1,0 +1,5 @@
+ablation,baseline,comparison,baseline_mIoU,comparison_mIoU,delta_mIoU,baseline_mean_dice,comparison_mean_dice,delta_mean_dice,baseline_pixel_accuracy,delta_pixel_accuracy,baseline_human_iou,comparison_human_iou,delta_human_iou,baseline_hd95_person,comparison_hd95_person,delta_hd95_person,baseline_val_loss,comparison_val_loss,delta_val_loss
+Augmentation,unet_small_no_aug,unet_small_with_aug,0.044,0.0418,-0.0022,0.0591,0.053,-0.0061,0.656,0.0578,0.1232,0.1353,0.0121,95.8874,88.7402,-7.1472,3.4112,3.4392,0.0279
+Loss function (CE vs Dice),unet_small_ce_only,unet_small_dice_only,0.045,0.045,0.0,0.0585,0.0587,0.0002,0.7069,-0.0358,0.1315,0.2098,0.0783,88.3839,89.8553,1.4714,2.574,0.8211,-1.7529
+Model size (small vs wide),unet_small_with_aug,unet_wider_with_aug,0.0418,0.0423,0.0006,0.053,0.0538,0.0009,0.7138,0.0003,0.1353,0.1366,0.0013,88.7402,99.3223,10.5821,3.4392,3.3952,-0.0439
+Architecture (U-Net vs DeepLab),unet_small_with_aug,deeplabv3_resnet50,0.0418,0.0655,0.0237,0.053,0.0978,0.0449,0.7138,-0.0612,0.1353,0.0241,-0.1111,88.7402,97.9131,9.1729,3.4392,2.5729,-0.8662

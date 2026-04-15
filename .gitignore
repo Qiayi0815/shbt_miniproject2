@@ -1,0 +1,25 @@
+# environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# large checkpoints and datasets (do not push)
+*.pt
+*.pth
+*.ckpt
+artifacts/**/*.pt
+notebooks/artifacts/**/*.pt
+artifacts_debug_fix/
+VOCtrainval*/
+*.tar
+*.tar.gz
+
+# local tooling / OS
+.omx/
+.DS_Store
+*.log
+.claude/
+
+# matplotlib cache inside project
+.mplconfig/
