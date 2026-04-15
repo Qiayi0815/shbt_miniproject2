@@ -99,11 +99,59 @@ def main() -> None:
         fig.savefig(d / "fig04_deeplab_per_class_iou.png", dpi=200)
     plt.close(fig)
 
+    # --- Figure 5: Per-class IoU heatmap (DeepLab vs representative U-Nets) ---
+    class_cols = [c for c in per.columns if c != "experiment"]
+    models = ["deeplabv3_resnet50", "unet_small_with_aug", "unet_small_dice_only"]
+    mat = np.stack(
+        [
+            per.loc[per["experiment"] == m, class_cols].iloc[0].astype(float).values
+            for m in models
+        ],
+        axis=0,
+    )  # shape (3, 21)
+    fig, ax = plt.subplots(figsize=(6.2, 7.0))
+    im = ax.imshow(mat.T, aspect="auto", cmap="viridis", vmin=0.0, vmax=max(0.2, float(mat.max()) * 1.05))
+    ax.set_xticks(range(len(models)))
+    ax.set_xticklabels(["DeepLab\nR50", "U-Net\n+aug", "U-Net\nDice"], fontsize=8)
+    ax.set_yticks(range(len(class_cols)))
+    ax.set_yticklabels(class_cols, fontsize=7)
+    ax.set_title("Per-class IoU: DeepLab vs U-Net (aug) vs U-Net (Dice only)")
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("IoU", fontsize=8)
+    fig.tight_layout()
+    for d in (FIG_DIR, REPORT_FIG):
+        fig.savefig(d / "fig05_perclass_heatmap_models.png", dpi=200)
+    plt.close(fig)
+
+    # --- Figure 6: Pixel accuracy vs mIoU (decoupling under imbalance) ---
+    short = {
+        "deeplabv3_resnet50": "DL-R50",
+        "unet_small_dice_only": "UN-Dice",
+        "unet_small_ce_only": "UN-CE",
+        "unet_small_no_aug": "UN-noaug",
+        "unet_wider_with_aug": "UN-wide",
+        "unet_small_with_aug": "UN-aug",
+    }
+    fig, ax = plt.subplots(figsize=(4.5, 4.0))
+    for _, row in exp.iterrows():
+        ax.scatter(row["mIoU"], row["pixel_accuracy"], s=55, alpha=0.85)
+        lab = short.get(row["experiment"], row["experiment"][:10])
+        ax.annotate(lab, (row["mIoU"], row["pixel_accuracy"]), fontsize=7, xytext=(3, 3), textcoords="offset points")
+    ax.set_xlabel("mIoU")
+    ax.set_ylabel("Pixel accuracy")
+    ax.set_title("Pixel accuracy versus mIoU by experiment")
+    fig.tight_layout()
+    for d in (FIG_DIR, REPORT_FIG):
+        fig.savefig(d / "fig06_pixelacc_vs_miou.png", dpi=200)
+    plt.close(fig)
+
     for name in (
         "fig01_miou_dice_by_experiment.png",
         "fig02_person_metrics.png",
         "fig03_ablation_deltas.png",
         "fig04_deeplab_per_class_iou.png",
+        "fig05_perclass_heatmap_models.png",
+        "fig06_pixelacc_vs_miou.png",
     ):
         print("Wrote:", FIG_DIR / name, "&", REPORT_FIG / name)
 
