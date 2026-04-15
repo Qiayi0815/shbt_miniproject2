@@ -66,13 +66,13 @@ Experiments are implemented in PyTorch. Source code, the primary notebook, train
 
 All metrics below are computed on the Pascal VOC 2007 validation masks used as test data. Figures and tables are referenced in the order they appear.
 
-![Figure 1. Mean intersection-over-union and mean Dice coefficient by experiment (sorted by mIoU in the plotting script).](./report_figures/fig01_miou_dice_by_experiment.png){width=95%}
+![Mean intersection-over-union and mean Dice coefficient by experiment (bars sorted by mIoU in the plotting script).](./report_figures/fig01_miou_dice_by_experiment.png){width=95%}
 
 Figure 1 summarizes global overlap: DeepLabV3-ResNet50 attains the tallest bars on both mIoU and mean Dice (0.0655 and 0.0978), while U-Net runs occupy a lower band on mIoU yet remain competitive on mean Dice only for select configurations. The figure therefore previews the central architectural gap before tabulating complementary quantities.
 
-![Figure 6. Pixel accuracy versus mIoU for each experiment (abbreviated labels: DL-R50 = DeepLabV3-ResNet50; UN-* = U-Net variants).](./report_figures/fig06_pixelacc_vs_miou.png){width=62%}
+![Pixel accuracy versus mIoU for each experiment (abbreviated labels: DL-R50 = DeepLabV3-ResNet50; UN-* = U-Net variants).](./report_figures/fig06_pixelacc_vs_miou.png){width=62%}
 
-Figure 6 makes the decoupling explicit: several U-Nets sit to the **right** of DeepLab on pixel accuracy but to the **left** on mIoU, which is the hallmark of majority-class agreement without balanced per-class overlap. DeepLab occupies the upper-left quadrant relative to those points, trading a few percentage points of pixel accuracy for higher mIoU.
+Figure 2 makes the decoupling explicit: several U-Nets sit to the **right** of DeepLab on pixel accuracy but to the **left** on mIoU, which is the hallmark of majority-class agreement without balanced per-class overlap. DeepLab occupies the upper-left quadrant relative to those points, trading a few percentage points of pixel accuracy for higher mIoU.
 
 **Table 1.** Quantitative segmentation metrics. Pixel accuracy, mIoU, mean Dice, person IoU, and person pixel accuracy are fractions in $[0,1]$ except HD95 (person), for which lower values indicate better boundary agreement. Validation loss is included for completeness; values are not directly comparable between Dice-only and cross-entropy runs.
 
@@ -87,9 +87,9 @@ Figure 6 makes the decoupling explicit: several U-Nets sit to the **right** of D
 
 Table 1 states the same rankings numerically. DeepLab leads mIoU and mean Dice. The Dice-only U-Net attains the largest person IoU (0.210) and person pixel accuracy (0.479), whereas the cross-entropy-only U-Net attains the lowest HD95 among U-Net variants (88.38). DeepLab records a low person IoU (0.024) in this fifteen-epoch snapshot despite leading global overlap, which motivates joint reporting of summary and class-specific evidence. Validation loss is lowest for Dice-only training (0.82) but scales differently under cross-entropy (e.g., 2.57 for DeepLab and CE-only U-Net).
 
-![Figure 2. Person-class IoU and person pixel accuracy (bars) with HD95 for the person mask (markers connected by line segments; lower HD95 is preferable).](./report_figures/fig02_person_metrics.png){width=95%}
+![Person-class IoU and person pixel accuracy (bars) with HD95 for the person mask (markers connected by line segments; lower HD95 is preferable).](./report_figures/fig02_person_metrics.png){width=95%}
 
-Figure 2 isolates the **person** axis of Table 1: Dice training elevates both person IoU and person pixel accuracy, CE-only minimizes HD95 among U-Nets, and DeepLab's HD95 and person IoU remain modest here relative to its global mIoU lead.
+Figure 3 isolates the **person** axis of Table 1: Dice training elevates both person IoU and person pixel accuracy, CE-only minimizes HD95 among U-Nets, and DeepLab's HD95 and person IoU remain modest here relative to its global mIoU lead.
 
 **Table 2.** Paired ablation effects (comparison minus baseline). HD95 is on the person mask (lower $\Delta$ is better).
 
@@ -102,23 +102,23 @@ Figure 2 isolates the **person** axis of Table 1: Dice training elevates both pe
 
 Augmentation reduces mIoU slightly ($-0.0022$) while improving person IoU ($+0.0121$) and HD95 ($-7.15$). Replacing cross-entropy with Dice leaves mIoU unchanged at printed precision but raises person IoU by $0.0783$ with a small HD95 penalty ($+1.47$). Width scaling is nearly neutral on mIoU and person IoU yet raises HD95 by $10.58$. The architecture row carries the largest mIoU gain ($+0.0237$) together with a person IoU drop ($-0.1111$) and higher HD95 ($+9.17$), summarizing the trade-off between balanced multi-class segmentation and person overlap under a fixed schedule.
 
-![Figure 3. Changes in mIoU (blue) and person IoU (orange) for each paired ablation in Table 2 (horizontal axis: $\Delta$ metric).](./report_figures/fig03_ablation_deltas.png){width=95%}
+![Changes in mIoU (blue) and person IoU (orange) for each paired ablation in Table 2 (horizontal axis: $\Delta$ metric).](./report_figures/fig03_ablation_deltas.png){width=95%}
 
-Figure 3 re-expresses Table 2 for the two overlap summaries: augmentation and architecture move person IoU and mIoU in different directions, whereas the loss swap shifts person IoU strongly with a near-zero mIoU delta at three decimal places.
+Figure 4 re-expresses Table 2 for the two overlap summaries: augmentation and architecture move person IoU and mIoU in different directions, whereas the loss swap shifts person IoU strongly with a near-zero mIoU delta at three decimal places.
 
-![Figure 4. Per-class IoU for DeepLabV3-ResNet50 excluding background, sorted ascending.](./report_figures/fig04_deeplab_per_class_iou.png){width=72%}
+![Per-class IoU for DeepLabV3-ResNet50 excluding background, sorted ascending.](./report_figures/fig04_deeplab_per_class_iou.png){width=72%}
 
-Figure 4 lists every non-background class for which DeepLab achieves non-negligible IoU in our export, emphasizing breadth rather than a single foreground mode.
+Figure 5 lists every non-background class for which DeepLab achieves non-negligible IoU in our export, emphasizing breadth rather than a single foreground mode.
 
-![Figure 5. Per-class IoU heatmap for DeepLabV3-ResNet50, U-Net with augmentation, and U-Net with Dice-only training (all twenty-one VOC classes, including background).](./report_figures/fig05_perclass_heatmap_models.png){width=62%}
+![Per-class IoU heatmap for DeepLabV3-ResNet50, U-Net with augmentation, and U-Net with Dice-only training (all twenty-one VOC classes, including background).](./report_figures/fig05_perclass_heatmap_models.png){width=62%}
 
-Figure 5 contrasts **dense** versus **sparse** per-class structure: DeepLab shows energy across many rows, whereas the two U-Net columns are darker outside person and a few incidental classes, matching the narrative of background-heavy U-Net predictions with selective foreground peaks.
+Figure 6 contrasts **dense** versus **sparse** per-class structure: DeepLab shows energy across many rows, whereas the two U-Net columns are darker outside person and a few incidental classes, matching the narrative of background-heavy U-Net predictions with selective foreground peaks.
 
 Dense prediction **mosaics** (image, ground truth, prediction) and **best- versus worst-case** person examples ranked by per-image person IoU remain in the companion notebook; export them for the submission PDF if required as qualitative figures.
 
 # Discussion
 
-Pixel accuracy is dominated by correct background predictions; consequently, it can increase when the model becomes more confident on easy majority regions even as rare-class IoU stagnates. Mean IoU penalizes such imbalance because it averages overlap across categories. Figure 6 visualizes this decoupling directly; Table 1 supplies the underlying numbers. DeepLabV3-ResNet50 widens the effective receptive field and fuses multi-scale context prior to upsampling, which favors recovery of diverse object categories and aligns with the spread of non-zero per-class IoU in Figures 4 and 5. Under the same resolution and epoch budget, compact U-Nets more often concentrate evidence in background and a limited set of foreground modes, as shown by the sparse columns in Figure 5 and by the per-class exports summarized there.
+Pixel accuracy is dominated by correct background predictions; consequently, it can increase when the model becomes more confident on easy majority regions even as rare-class IoU stagnates. Mean IoU penalizes such imbalance because it averages overlap across categories. Figure 2 visualizes this decoupling directly; Table 1 supplies the underlying numbers. DeepLabV3-ResNet50 widens the effective receptive field and fuses multi-scale context prior to upsampling, which favors recovery of diverse object categories and aligns with the spread of non-zero per-class IoU in Figures 5 and 6. Under the same resolution and epoch budget, compact U-Nets more often concentrate evidence in background and a limited set of foreground modes, as shown by the sparse columns in Figure 6 and by the per-class exports summarized there.
 
 Absolute mIoU values remain modest at $256 \times 256$ resolution with fifteen training epochs. Downsampling removes fine structures that remain semantically salient at full scale, and class imbalance continues to bias gradients toward safe dominant-class predictions. Within this constrained regime, relative ordering between architectures and training objectives remains informative.
 
